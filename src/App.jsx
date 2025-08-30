@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Box, AppBar, Toolbar, Typography, Button } from '@mui/material';
+import { Box, AppBar, Toolbar, Typography, Button, CircularProgress } from '@mui/material';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import ProtectedRoute from './auth/ProtectedRoute';
 import Login from './pages/Login';
@@ -29,6 +29,7 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       staleTime: 5 * 60 * 1000, // 5 minutes
+      refetchOnWindowFocus: false,
     },
   },
 });
@@ -38,7 +39,11 @@ const Navigation = () => {
   const { user, profile, signOut } = useAuth();
 
   const handleSignOut = async () => {
-    await signOut();
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
   };
 
   if (!user) return null;
@@ -74,19 +79,67 @@ const Navigation = () => {
   );
 };
 
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('App Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box 
+          display="flex" 
+          flexDirection="column"
+          justifyContent="center" 
+          alignItems="center" 
+          minHeight="100vh"
+          sx={{ p: 4, textAlign: 'center' }}
+        >
+          <Typography variant="h4" gutterBottom color="error">
+            Something went wrong
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </Typography>
+          <Button 
+            variant="contained" 
+            onClick={() => window.location.reload()}
+          >
+            Reload Page
+          </Button>
+        </Box>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 // Main App component
 const AppContent = () => {
-  const { loading } = useAuth();
+  const { loading, user } = useAuth();
 
   if (loading) {
     return (
       <Box 
         display="flex" 
+        flexDirection="column"
         justifyContent="center" 
         alignItems="center" 
         minHeight="100vh"
       >
-        <Typography>Loading...</Typography>
+        <CircularProgress size={60} sx={{ mb: 2 }} />
+        <Typography>Loading application...</Typography>
       </Box>
     );
   }
@@ -125,7 +178,25 @@ const AppContent = () => {
             </Box>
           } 
         />
-        <Route path="/" element={<Navigate to="/trade" replace />} />
+        <Route 
+          path="/" 
+          element={
+            user ? <Navigate to="/trade" replace /> : <Navigate to="/login" replace />
+          } 
+        />
+        <Route 
+          path="*" 
+          element={
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography variant="h4" gutterBottom>
+                Page Not Found
+              </Typography>
+              <Typography>
+                The page you're looking for doesn't exist.
+              </Typography>
+            </Box>
+          } 
+        />
       </Routes>
     </Box>
   );
@@ -133,16 +204,18 @@ const AppContent = () => {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <AuthProvider>
-          <Router>
-            <AppContent />
-          </Router>
-        </AuthProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <AuthProvider>
+            <Router>
+              <AppContent />
+            </Router>
+          </AuthProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
